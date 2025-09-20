@@ -21,4 +21,4 @@ Passikuvaeditori on ilmainen, avoimen lähdekoodin työkalu, joka on suunniteltu
 Unlike other photo editing software, Passport Photo Editor is completely free and tailored specifically for creating compliant passport photos, making it accessible to everyone.
 
 ## How to Use
-Visit the [Passport Photo Editor](https://github.com/trondin/passport-photo-editor/blob/main/index.html) to start editing your photos directly in your browser. No installation or technical knowledge required!
+Visit the [Passport Photo Editor](https://trondin.github.io/passport-photo-editor) to start editing your photos directly in your browser. No installation or technical knowledge required!
