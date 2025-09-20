@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Passport Photo Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<style>
+  :root { --toolbar-h: 52px; }
+  html,body { height:100%; margin:0; font-family: Arial, Helvetica, sans-serif; background:#f0f0f0; }
+  #toolbar {
+    height:var(--toolbar-h);
+    display:flex;
+    justify-content:center;
+    gap:8px;
+    align-items:center;
+    padding:8px;
+    background:#ececec;
+    box-shadow:0 2px 6px rgba(0,0,0,0.06);
+  }
+  #canvas-container {
+    position:relative;
+    width:100%;
+    height:calc(100vh - var(--toolbar-h));
+    overflow:hidden;
+  }
+  canvas { position:absolute; left:0; top:0; }
+  button, input[type=file] {
+    padding:6px 10px;
+    border-radius:4px;
+    border:1px solid #cfcfcf;
+    background:white;
+    cursor:pointer;
+  }
+  #status { 
+    position:absolute;
+    left:10px; 
+    bottom:8px; 
+    font-size:14px; 
+    color:#444; 
+    background:rgba(255,255,255,0.7);
+    padding:2px 6px;
+    border-radius:4px;
+  }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <input id="fileInput" type="file" accept="image/*" />
+    <button id="openBtn">Open…</button>
+    <button id="rotateLeft">Rotate Left</button>
+    <button id="rotateRight">Rotate Right</button>
+    <button id="saveBtn">Save</button>
+    <button id="helpBtn">Help</button>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="c"></canvas>
+    <span id="status">No image loaded</span>
+  </div>
+
+<script>
+/* ------------------ Конфигурация рамки ------------------ */
+const TARGET_WIDTH = 500;
+const TARGET_HEIGHT = 653;
+
+const canvas = new fabric.Canvas('c', {
+  selection: false,
+  preserveObjectStacking: true,
+  renderOnAddRemove: true
+});
+
+const container = document.getElementById('canvas-container');
+const statusEl = document.getElementById('status');
+let img = null;
+let overlayObjects = [];
+let isDragging = false;
+let dragOrigin = {x:0,y:0};
+let originalFilename = '';
+
+/* ------------------ Размер canvas ------------------ */
+function resizeCanvas() {
+  canvas.setWidth(container.clientWidth);
+  canvas.setHeight(container.clientHeight);
+  canvas.calcOffset();
+  drawFrame();
+  canvas.requestRenderAll();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+/* ------------------ Рамка + красные линии ------------------ */
+function drawFrame() {
+  overlayObjects.forEach(o=>canvas.remove(o));
+  overlayObjects=[];
+  const cx=(canvas.getWidth()-TARGET_WIDTH)/2;
+  const cy=(canvas.getHeight()-TARGET_HEIGHT)/2;
+
+  // основная рамка
+  const frame=new fabric.Rect({
+    left:cx,top:cy,width:TARGET_WIDTH,height:TARGET_HEIGHT,
+    fill:'transparent',stroke:'#000',strokeWidth:2,
+    selectable:false,evented:false
+  });
+  overlayObjects.push(frame);
+
+  // длинные горизонтальные линии
+  const longW = TARGET_WIDTH*0.8;
+  const lx = cx+(TARGET_WIDTH-longW)/2;
+  const topY = cy+56;
+  const bottomY = cy+TARGET_HEIGHT-96;
+  overlayObjects.push(
+    new fabric.Line([lx, topY, lx+longW, topY], { stroke:'red', strokeWidth:2, selectable:false, evented:false }),
+    new fabric.Line([lx, bottomY, lx+longW, bottomY], { stroke:'red', strokeWidth:2, selectable:false, evented:false })
+  );
+
+  // короткие горизонтальные линии
+  const shortW = TARGET_WIDTH*0.6;
+  const sx = cx+(TARGET_WIDTH-shortW)/2;
+  const shortTopY = topY+28;
+  const shortBottomY = bottomY-28;
+  overlayObjects.push(
+    new fabric.Line([sx, shortTopY, sx+shortW, shortTopY], { stroke:'red', strokeWidth:2, selectable:false, evented:false }),
+    new fabric.Line([sx, shortBottomY, sx+shortW, shortBottomY], { stroke:'red', strokeWidth:2, selectable:false, evented:false })
+  );
+
+  // вертикальные линии
+  const gap=40;
+  const vxLeft=cx+(TARGET_WIDTH-gap)/2;
+  const vxRight=vxLeft+gap;
+  const vTop=shortTopY+28;
+  const vBottom=shortBottomY-28;
+  overlayObjects.push(
+    new fabric.Line([vxLeft, vTop, vxLeft, vBottom], { stroke:'red', strokeWidth:2, selectable:false, evented:false }),
+    new fabric.Line([vxRight, vTop, vxRight, vBottom], { stroke:'red', strokeWidth:2, selectable:false, evented:false })
+  );
+
+  overlayObjects.forEach(o=>{canvas.add(o);o.selectable=false;o.evented=false;});
+  overlayObjects.forEach(o=>canvas.bringToFront(o));
+}
+
+/* ------------------ Загрузка файла ------------------ */
+function loadFile(file){
+  originalFilename=file.name||'photo';
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    fabric.Image.fromURL(e.target.result,function(oImg){
+      if(img) canvas.remove(img);
+      img=oImg;
+      const cx=(canvas.getWidth()-TARGET_WIDTH)/2;
+      const cy=(canvas.getHeight()-TARGET_HEIGHT)/2;
+      const scale=Math.max(TARGET_WIDTH/img.width,TARGET_HEIGHT/img.height)*1.1;
+      img.set({
+        left:cx+TARGET_WIDTH/2, top:cy+TARGET_HEIGHT/2,
+        originX:'center', originY:'center',
+        scaleX:scale, scaleY:scale,
+        angle:0, selectable:false, evented:true
+      });
+      canvas.add(img); canvas.sendToBack(img);
+      overlayObjects.forEach(o=>canvas.bringToFront(o));
+      statusEl.textContent='Image loaded — drag to move, wheel to zoom';
+      canvas.requestRenderAll();
+    },{crossOrigin:'anonymous'});
+  };
+  reader.readAsDataURL(file);
+}
+const fileInput=document.getElementById('fileInput');
+document.getElementById('openBtn').onclick=()=>fileInput.click();
+fileInput.onchange=()=>{if(fileInput.files[0]) loadFile(fileInput.files[0]);};
+/* drag&drop */
+['dragover','dragenter'].forEach(evt=>container.addEventListener(evt,e=>{
+  e.preventDefault();container.style.border='2px dashed #2b8cff';
+}));
+['dragleave','drop'].forEach(evt=>container.addEventListener(evt,e=>{
+  e.preventDefault();container.style.border='none';
+}));
+container.addEventListener('drop',e=>{
+  const f=e.dataTransfer.files[0];
+  if(f && f.type.startsWith('image/')) loadFile(f);
+});
+
+/* ------------------ Панинг ------------------ */
+function pointer(e){
+  const r=canvas.upperCanvasEl.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+canvas.on('mouse:down',opt=>{
+  if(!img) return;
+  const p=pointer(opt.e);
+  if(img.containsPoint(new fabric.Point(p.x,p.y))){
+    isDragging=true; dragOrigin=p; canvas.defaultCursor='grabbing';
+  }
+});
+canvas.on('mouse:move',opt=>{
+  if(!isDragging||!img) return;
+  const p=pointer(opt.e);
+  img.left+=p.x-dragOrigin.x;
+  img.top +=p.y-dragOrigin.y;
+  dragOrigin=p;
+  img.setCoords(); canvas.requestRenderAll();
+});
+canvas.on('mouse:up',()=>{isDragging=false; canvas.defaultCursor='default';});
+
+/* ------------------ Зум колесом ------------------ */
+canvas.upperCanvasEl.addEventListener('wheel',e=>{
+  if(!img) return;
+  e.preventDefault();
+  const p=pointer(e);
+  const oldScale=img.scaleX;
+  const factor=(e.deltaY>0?0.95:1.05); // мягкий зум
+  let newScale=oldScale*factor;
+  newScale=Math.max(0.1,Math.min(newScale,8));
+  const diff=newScale/oldScale;
+  img.scaleX=img.scaleY=newScale;
+  img.left=p.x-(p.x-img.left)*diff;
+  img.top =p.y-(p.y-img.top )*diff;
+  img.setCoords(); canvas.requestRenderAll();
+},{passive:false});
+
+/* ------------------ Вращение ------------------ */
+document.getElementById('rotateLeft').onclick=()=>rotate(-90);
+document.getElementById('rotateRight').onclick=()=>rotate(90);
+function rotate(d){if(img){img.angle=(img.angle+d)%360; img.setCoords(); canvas.requestRenderAll();}}
+
+/* ------------------ Сохранение ------------------ */
+document.getElementById('saveBtn').onclick=()=>{
+  if(!img) return alert('Нет изображения');
+  overlayObjects.forEach(o=>o.visible=false);
+  canvas.requestRenderAll();
+  const cx=(canvas.getWidth()-TARGET_WIDTH)/2;
+  const cy=(canvas.getHeight()-TARGET_HEIGHT)/2;
+  const url=canvas.toDataURL({
+    format:'jpeg',quality:0.95,
+    left:cx,top:cy,width:TARGET_WIDTH,height:TARGET_HEIGHT
+  });
+  overlayObjects.forEach(o=>o.visible=true);
+  canvas.requestRenderAll();
+  const base=originalFilename.replace(/\.[^/.]+$/,"")||'photo';
+  const a=document.createElement('a');a.href=url;a.download=base+'_crop.jpg';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+};
+
+/* ------------------ Help ------------------ */
+document.getElementById('helpBtn').onclick = () => alert(
+`Instructions:
+- Open… or drag the file with the mouse.
+- Movement: click on the photo and drag.
+- Scale: mouse wheel.
+- Rotation: Rotate buttons.
+- Save — save the cropped frame 500×653.`
+);
+
+/* ------------------ init ------------------ */
+drawFrame();
+statusEl.textContent='Готово — загрузите изображение';
+</script>
+</body>
+</html>
+
